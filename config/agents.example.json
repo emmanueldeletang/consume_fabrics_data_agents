@@ -1,0 +1,33 @@
+{
+  "adventureworks": {
+    "name": "AdventureWorks Agent",
+    "description": "Analyses AdventureWorks sales and customer data.",
+    "capabilities": [
+      "Revenue and sales trend analysis",
+      "Customer segmentation"
+    ],
+    "sample_questions": [
+      "Top 5 products by revenue this year",
+      "What is the top product by revenue across all stores?"
+    ],
+    "base_url": "https://api.fabric.microsoft.com/v1/workspaces/<workspace-id>/dataagents/<agent-id>/aiassistant/openai"
+  },
+  "generic_agent": {
+    "name": "NorthWind Generic Agent",
+    "description": "Multi-tenant NorthWind Insights analytics assistant.",
+    "tenants": [
+      "Adventure Works",
+      "Fabrikam Inc.",
+      "Contoso"
+    ],
+    "capabilities": [
+      "Multi-tenant data analysis",
+      "Tenant-specific filtering"
+    ],
+    "sample_questions": [
+      "Show top 5 products by revenue",
+      "What are the recent sales trends?"
+    ],
+    "base_url": "https://api.fabric.microsoft.com/v1/workspaces/<workspace-id>/dataagents/<agent-id>/aiassistant/openai"
+  }
+}
