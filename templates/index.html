@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fabric Data Agent</title>
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #f3f4f6;
+      color: #1f2937;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top bar ──────────────────────────────────────────────────── */
+    header {
+      background: #0078d4;
+      color: #fff;
+      padding: 0 1.5rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,.25);
+      flex-shrink: 0;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: .01em; }
+
+    /* ── Two-column layout ────────────────────────────────────────── */
+    .layout {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar ──────────────────────────────────────────────────── */
+    .sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      background: #fff;
+      border-right: 1px solid #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+    .sidebar-title {
+      padding: 1rem 1.1rem .6rem;
+      font-size: .7rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: #6b7280;
+    }
+
+    /* ── Agent card ───────────────────────────────────────────────── */
+    .agent-card {
+      margin: 0 .6rem .6rem;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 10px;
+      padding: .8rem .9rem;
+      cursor: pointer;
+      transition: border-color .15s, background .15s, box-shadow .15s;
+    }
+    .agent-card:hover { border-color: #93c5fd; background: #eff6ff; }
+    .agent-card.selected {
+      border-color: #0078d4;
+      background: #eff6ff;
+      box-shadow: 0 0 0 3px rgba(0,120,212,.12);
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      margin-bottom: .45rem;
+    }
+    .agent-icon {
+      width: 32px; height: 32px;
+      border-radius: 8px;
+      background: #dbeafe;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+      font-size: .88rem;
+    }
+    .agent-card.selected .agent-icon { background: #bfdbfe; }
+    .agent-name {
+      font-size: .9rem; font-weight: 600; color: #111827; line-height: 1.2;
+    }
+    .selected-badge {
+      margin-left: auto;
+      background: #0078d4; color: #fff;
+      font-size: .64rem; font-weight: 700;
+      padding: .15rem .5rem; border-radius: 99px;
+      letter-spacing: .04em; text-transform: uppercase;
+      display: none;
+    }
+    .agent-card.selected .selected-badge { display: inline-block; }
+    .agent-desc {
+      font-size: .8rem; color: #4b5563; line-height: 1.45; margin-bottom: .5rem;
+    }
+    .capabilities {
+      list-style: none; display: flex; flex-wrap: wrap; gap: .3rem;
+    }
+    .capabilities li {
+      background: #f1f5f9; color: #374151;
+      font-size: .72rem; padding: .18rem .55rem;
+      border-radius: 99px; border: 1px solid #e2e8f0;
+    }
+
+    /* ── Chat area ────────────────────────────────────────────────── */
+    .chat-area {
+      flex: 1; display: flex; flex-direction: column; overflow: hidden;
+    }
+
+    /* ── Active agent bar ─────────────────────────────────────────── */
+    .agent-bar {
+      background: #fff;
+      border-bottom: 1px solid #e5e7eb;
+      padding: .6rem 1.25rem;
+      display: flex; align-items: center; gap: .75rem;
+      flex-shrink: 0;
+    }
+    .agent-bar-icon {
+      width: 30px; height: 30px; border-radius: 7px;
+      background: #dbeafe;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .85rem; flex-shrink: 0;
+    }
+    .agent-bar-name  { font-size: .9rem; font-weight: 600; color: #111827; }
+    .agent-bar-desc  { font-size: .77rem; color: #6b7280; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .clear-btn {
+      margin-left: auto; flex-shrink: 0;
+      background: none; border: 1px solid #d1d5db; border-radius: 7px;
+      padding: .3rem .7rem; font-size: .78rem; cursor: pointer; color: #374151;
+      transition: background .15s, border-color .15s;
+    }
+    .clear-btn:hover { background: #f9fafb; border-color: #9ca3af; }
+
+    /* ── Sample questions ─────────────────────────────────────────── */
+    .samples-wrapper { padding: .75rem 1.25rem .4rem; flex-shrink: 0; }
+    .samples-label {
+      font-size: .72rem; text-transform: uppercase;
+      letter-spacing: .07em; color: #9ca3af; margin-bottom: .45rem;
+    }
+    .samples-grid { display: flex; flex-wrap: wrap; gap: .4rem; }
+    .sample-btn {
+      background: #fff; border: 1px solid #d1d5db; border-radius: 7px;
+      padding: .38rem .75rem; font-size: .82rem; cursor: pointer;
+      color: #0078d4; transition: background .15s, border-color .15s; text-align: left;
+    }
+    .sample-btn:hover { background: #eff6ff; border-color: #93c5fd; }
+
+    /* ── Chat window ──────────────────────────────────────────────── */
+    #chat-window {
+      flex: 1; overflow-y: auto;
+      display: flex; flex-direction: column; gap: .75rem;
+      padding: .75rem 1.25rem .5rem;
+    }
+
+    .msg { display: flex; gap: .55rem; max-width: 88%; }
+    .msg.user  { align-self: flex-end;  flex-direction: row-reverse; }
+    .msg.agent { align-self: flex-start; }
+
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .72rem; font-weight: 700; flex-shrink: 0;
+    }
+    .msg.user  .avatar { background: #0078d4; color: #fff; }
+    .msg.agent .avatar { background: #e5e7eb; color: #374151; }
+
+    .bubble {
+      border-radius: 12px; padding: .6rem .95rem;
+      font-size: .9rem; line-height: 1.55;
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .msg.user  .bubble { background: #0078d4; color: #fff; border-bottom-right-radius: 3px; }
+    .msg.agent .bubble { background: #fff; border: 1px solid #e5e7eb; border-bottom-left-radius: 3px; }
+    .msg.agent .bubble.error { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
+
+    .bubble table { border-collapse: collapse; margin-top: .5rem; font-size: .83rem; width: 100%; }
+    .bubble th, .bubble td { border: 1px solid #d1d5db; padding: .28rem .55rem; text-align: left; }
+    .bubble th { background: #f9fafb; font-weight: 600; }
+
+    /* ── Token usage indicator ─────────────────────────────────────── */
+    .token-usage {
+      font-size: .75rem; color: #6b7280; margin-top: .5rem;
+      padding: .4rem .6rem; background: #f9fafb; border-radius: 6px;
+      border-left: 3px solid #93c5fd; font-family: monospace;
+    }
+    .token-usage-label { font-weight: 600; color: #374151; }
+    .token-usage-item { display: inline-block; margin-right: 1rem; }
+    .timing-usage {
+      font-size: .75rem; color: #6b7280; margin-top: .4rem;
+      padding: .4rem .6rem; background: #f8fafc; border-radius: 6px;
+      border-left: 3px solid #86efac; font-family: monospace;
+    }
+    .timing-usage-label { font-weight: 600; color: #166534; }
+    .timing-usage-item { display: inline-block; margin-right: 1rem; }
+
+    /* ── Typing indicator ─────────────────────────────────────────── */
+    #typing-indicator { display: none; }
+    #typing-indicator.visible { display: flex; }
+
+    .dot-flashing {
+      position: relative; width: 8px; height: 8px;
+      border-radius: 50%; background: #9ca3af;
+      animation: dotFlash .8s infinite linear alternate;
+    }
+    .dot-flashing::before, .dot-flashing::after {
+      content: ""; position: absolute; top: 0;
+      width: 8px; height: 8px; border-radius: 50%; background: #9ca3af;
+    }
+    .dot-flashing::before { left: -14px; animation: dotFlash .8s .2s infinite linear alternate; }
+    .dot-flashing::after  { left:  14px; animation: dotFlash .8s .4s infinite linear alternate; }
+    @keyframes dotFlash { 0% { background: #9ca3af; } 100% { background: #e5e7eb; } }
+
+    /* ── Input bar ────────────────────────────────────────────────── */
+    .input-bar {
+      display: flex; gap: .5rem;
+      padding: .65rem 1.25rem .9rem; flex-shrink: 0;
+    }
+    #msg-input {
+      flex: 1; border: 1px solid #d1d5db; border-radius: 10px;
+      padding: .55rem .9rem; font-size: .9rem; font-family: inherit;
+      resize: none; height: 46px; outline: none;
+      transition: border-color .15s, box-shadow .15s; background: #fff;
+    }
+    #msg-input:focus { border-color: #0078d4; box-shadow: 0 0 0 3px rgba(0,120,212,.15); }
+    #send-btn {
+      background: #0078d4; color: #fff; border: none; border-radius: 10px;
+      width: 46px; height: 46px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: background .15s; flex-shrink: 0;
+    }
+    #send-btn:hover   { background: #106ebe; }
+    #send-btn:active  { background: #005a9e; }
+    #send-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+
+    @media (max-width: 680px) {
+      .sidebar { width: 100%; border-right: none; border-bottom: 1px solid #e5e7eb; max-height: 220px; }
+      .layout  { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+    <rect width="24" height="24" rx="4" fill="white" fill-opacity="0.15"/>
+    <path d="M12 3L20 8.5V15.5L12 21L4 15.5V8.5L12 3Z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M12 3V21M4 8.5L20 15.5M20 8.5L4 15.5" stroke="white" stroke-width="1" stroke-opacity="0.5"/>
+  </svg>
+  <h1>Fabric Data Agent</h1>
+</header>
+
+<div class="layout">
+
+  <!-- ── Sidebar ───────────────────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-title">Select Agent</div>
+
+    {% set icons = ["📊", "🏪", "📈", "🔍"] %}
+    {% for key, agent in agents.items() %}
+    <div class="agent-card {% if key == default_agent %}selected{% endif %}"
+         id="card-{{ key }}"
+         onclick="selectAgent('{{ key }}')">
+      <div class="card-header">
+        <div class="agent-icon">{{ icons[loop.index0] if loop.index0 < icons|length else "🤖" }}</div>
+        <span class="agent-name">{{ agent.name }}</span>
+        <span class="selected-badge">Active</span>
+      </div>
+      <p class="agent-desc">{{ agent.description }}</p>
+      <ul class="capabilities">
+        {% for cap in agent.capabilities %}
+        <li>{{ cap }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </aside>
+
+  <!-- ── Chat area ─────────────────────────────────────────────────────────── -->
+  <div class="chat-area">
+
+    <div class="agent-bar">
+      <div class="agent-bar-icon" id="bar-icon">📊</div>
+      <div style="min-width:0">
+        <div class="agent-bar-name" id="bar-name">{{ agents[default_agent].name }}</div>
+        <div class="agent-bar-desc" id="bar-desc">{{ agents[default_agent].description }}</div>
+      </div>
+      <button class="clear-btn" onclick="clearChat()">Clear chat</button>
+    </div>
+
+    <div class="samples-wrapper">
+      <div class="samples-label">Try a sample question</div>
+      <div id="tenant-selector" style="display: none; margin-bottom: .6rem;">
+        <label for="tenant-dropdown" style="display: block; font-size: .77rem; color: #6b7280; margin-bottom: .35rem; font-weight: 500;">Select Tenant:</label>
+        <select id="tenant-dropdown" style="width: 100%; padding: .4rem .6rem; border: 1px solid #d1d5db; border-radius: 7px; font-size: .9rem; font-family: inherit; background: #fff; cursor: pointer;">
+          <option value="">-- All Tenants --</option>
+        </select>
+      </div>
+      <div class="samples-grid" id="samples-grid">
+        {% for q in agents[default_agent].sample_questions %}
+        <button class="sample-btn" onclick="useSample(this.textContent)">{{ q }}</button>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div id="chat-window">
+      <div class="msg agent" id="typing-indicator">
+        <div class="avatar">AI</div>
+        <div class="bubble" style="padding:.7rem 1.1rem">
+          <div class="dot-flashing"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-bar">
+      <textarea id="msg-input"
+        placeholder="Ask a question about your data …"
+        rows="1"
+        onkeydown="handleKey(event)"></textarea>
+      <button id="send-btn" onclick="sendMessage()" title="Send">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="22" y1="2" x2="11" y2="13"/>
+          <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+        </svg>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const AGENTS = {{ agents | tojson }};
+
+  // Assign an icon per agent key (order-stable)
+  const AGENT_ICON_LIST = ["📊", "🏪", "📈", "🔍"];
+  const agentKeys  = Object.keys(AGENTS);
+  const AGENT_ICONS = {};
+  agentKeys.forEach((k, i) => { AGENT_ICONS[k] = AGENT_ICON_LIST[i] || "🤖"; });
+
+  let currentAgent = "{{ default_agent }}";
+  let messages     = [];
+
+  const chatWindow      = document.getElementById("chat-window");
+  const input           = document.getElementById("msg-input");
+  const sendBtn         = document.getElementById("send-btn");
+  const typingIndicator = document.getElementById("typing-indicator");
+  const samplesGrid     = document.getElementById("samples-grid");
+  const barName         = document.getElementById("bar-name");
+  const barDesc         = document.getElementById("bar-desc");
+  const barIcon         = document.getElementById("bar-icon");
+  const tenantSelector  = document.getElementById("tenant-selector");
+  const tenantDropdown  = document.getElementById("tenant-dropdown");
+
+  function populateTenantDropdown(agent) {
+    tenantDropdown.innerHTML = "";
+
+    const allOpt = document.createElement("option");
+    allOpt.value = "";
+    allOpt.textContent = "-- All Tenants --";
+    tenantDropdown.appendChild(allOpt);
+
+    const tenants = Array.isArray(agent.tenants) ? agent.tenants : [];
+    tenants.forEach(t => {
+      const opt = document.createElement("option");
+      opt.value = String(t);
+      opt.textContent = String(t);
+      tenantDropdown.appendChild(opt);
+    });
+  }
+
+  function selectAgent(key) {
+    if (key === currentAgent) return;
+    document.querySelectorAll(".agent-card").forEach(c => c.classList.remove("selected"));
+    document.getElementById("card-" + key).classList.add("selected");
+
+    const a = AGENTS[key];
+    barName.textContent = a.name;
+    barDesc.textContent = a.description;
+    barIcon.textContent = AGENT_ICONS[key];
+
+    // Show tenant selector only for generic_agent
+    tenantSelector.style.display = key === "generic_agent" ? "block" : "none";
+    if (key === "generic_agent") {
+      populateTenantDropdown(a);
+    }
+
+    samplesGrid.innerHTML = "";
+    (a.sample_questions || []).forEach(q => {
+      const btn = document.createElement("button");
+      btn.className = "sample-btn";
+      btn.textContent = q;
+      btn.onclick = () => useSample(q);
+      samplesGrid.appendChild(btn);
+    });
+
+    currentAgent = key;
+    _clearDom();
+    loadHistory(key);
+  }
+
+  function scrollBottom() { chatWindow.scrollTop = chatWindow.scrollHeight; }
+
+  function escHtml(s) {
+    return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+
+  function renderMarkdown(text) {
+    text = text.replace(/```[\w]*\n?([\s\S]*?)```/g,
+      (_, code) => `<pre style="background:#f3f4f6;border-radius:6px;padding:.55rem .8rem;font-size:.82rem;overflow-x:auto"><code>${escHtml(code.trim())}</code></pre>`);
+    text = text.replace(/`([^`]+)`/g,
+      (_, c) => `<code style="background:#f3f4f6;padding:.1rem .3rem;border-radius:4px;font-size:.87em">${escHtml(c)}</code>`);
+    text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    text = text.replace(/\|(.+)\|\n\|[-| :]+\|\n((?:\|.+\|\n?)*)/g, (_, header, rows) => {
+      const ths = header.split("|").filter(Boolean).map(c => `<th>${c.trim()}</th>`).join("");
+      const trs = rows.trim().split("\n").map(row => {
+        const tds = row.split("|").filter(Boolean).map(c => `<td>${c.trim()}</td>`).join("");
+        return `<tr>${tds}</tr>`;
+      }).join("");
+      return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+    });
+    text = text.replace(/\n/g, "<br>");
+    return text;
+  }
+
+  function appendMessage(role, content, isError = false, usage = null, timings = null) {
+    if (role === "agent") typingIndicator.classList.remove("visible");
+    const msgEl    = document.createElement("div");
+    msgEl.className = `msg ${role}`;
+    const avatarEl  = document.createElement("div");
+    avatarEl.className = "avatar";
+    avatarEl.textContent = role === "user" ? "You" : "AI";
+    const bubbleEl  = document.createElement("div");
+    bubbleEl.className = "bubble" + (isError ? " error" : "");
+    bubbleEl.innerHTML = role === "user" ? escHtml(content) : renderMarkdown(content);
+    if (role === "agent" && usage) {
+      bubbleEl.innerHTML += `<div class="token-usage">
+        <span class="token-usage-label">Token Usage:</span>
+        <span class="token-usage-item">Prompt: ${usage.prompt_tokens || 0}</span>
+        <span class="token-usage-item">Completion: ${usage.completion_tokens || 0}</span>
+        <span class="token-usage-item">Total: ${usage.total_tokens || 0}</span>
+        <span class="token-usage-item">CU: ${usage.cu_minutes || 0} min</span>
+      </div>`;
+    }
+    if (role === "agent" && timings) {
+      bubbleEl.innerHTML += `<div class="timing-usage">
+        <span class="timing-usage-label">Execution Time:</span>
+        <span class="timing-usage-item">Query Create: ${timings.query_creation_seconds || 0}s</span>
+        <span class="timing-usage-item">Agent Call: ${timings.agent_call_seconds || 0}s</span>
+        <span class="timing-usage-item">Query Exec: ${timings.query_execution_seconds || 0}s</span>
+        <span class="timing-usage-item">Total: ${timings.total_request_seconds || 0}s</span>
+        <span class="timing-usage-item">Started: ${timings.started_at || "n/a"}</span>
+        <span class="timing-usage-item">Finished: ${timings.finished_at || "n/a"}</span>
+      </div>`;
+    }
+    msgEl.appendChild(avatarEl);
+    msgEl.appendChild(bubbleEl);
+    chatWindow.insertBefore(msgEl, typingIndicator);
+    scrollBottom();
+  }
+
+  function setLoading(busy) {
+    sendBtn.disabled = busy;
+    input.disabled   = busy;
+    if (busy) { typingIndicator.classList.add("visible"); scrollBottom(); }
+    else      { typingIndicator.classList.remove("visible"); }
+  }
+
+  function _clearDom() {
+    messages = [];
+    Array.from(chatWindow.children).forEach(el => {
+      if (el.id !== "typing-indicator") el.remove();
+    });
+  }
+
+  async function loadHistory(agentKey) {
+    try {
+      const res  = await fetch(`/history/${agentKey}`);
+      const data = await res.json();
+      const hist = data.messages || [];
+      messages = hist;
+      hist.forEach(m => appendMessage(m.role === "user" ? "user" : "agent", m.content));
+    } catch (_) { /* silently ignore if DB unreachable */ }
+  }
+
+  async function clearChat() {
+    _clearDom();
+    try {
+      await fetch(`/history/${currentAgent}`, { method: "DELETE" });
+    } catch (_) { /* ignore */ }
+  }
+
+  async function sendMessage() {
+    const text = input.value.trim();
+    if (!text || sendBtn.disabled) return;
+    input.value = "";
+    input.style.height = "46px";
+    appendMessage("user", text);
+    setLoading(true);
+    try {
+      const payload = { message: text, messages, agent_key: currentAgent };
+      // Include tenant if generic_agent is selected and a tenant is chosen
+      if (currentAgent === "generic_agent" && tenantDropdown.value) {
+        payload.tenant = tenantDropdown.value;
+      }
+      const res = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (data.error) {
+        appendMessage("agent", data.error, true);
+      } else {
+        messages = data.messages;
+        appendMessage("agent", data.reply, false, data.usage || null, data.timings || null);
+      }
+    } catch (err) {
+      appendMessage("agent", `Network error: ${err.message}`, true);
+    } finally {
+      setLoading(false);
+      input.focus();
+    }
+  }
+
+  function useSample(text) {
+    input.value = text.trim();
+    input.focus();
+    sendMessage();
+  }
+
+  function handleKey(e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  input.addEventListener("input", () => {
+    input.style.height = "46px";
+    input.style.height = Math.min(input.scrollHeight, 120) + "px";
+  });
+
+  // Load history for the default agent on first page load
+  if (currentAgent === "generic_agent") {
+    tenantSelector.style.display = "block";
+    populateTenantDropdown(AGENTS[currentAgent]);
+  }
+  loadHistory(currentAgent);
+</script>
+
+</body>
+</html>
