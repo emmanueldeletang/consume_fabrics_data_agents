@@ -219,6 +219,13 @@ Clear conversation history for a specific agent.
 ### GET `/stats`
 Serves the consumption analytics dashboard (`templates/stats.html`).
 
+How to use the stats page:
+- Open `http://localhost:5000/stats`
+- The top summary cards show overall calls, total CU minutes, average CU per call, and average duration
+- The table shows per-agent min/avg/max values for CU, tokens, and request time
+- Data refreshes automatically every 15 seconds
+- The page reads from `GET /stats/data`
+
 ### GET `/stats/data`
 Returns aggregated consumption and latency metrics globally and by agent.
 
@@ -280,6 +287,26 @@ Template variables:
 
 When both `tenant_prompt_template` and `tenant` are present, the app formats the final prompt from config.
 If not present, the original user message is sent unchanged.
+
+Override example in `config/agents.json`:
+
+```json
+"generic_agent": {
+  "name": "NorthWind Generic Agent",
+  "description": "Multi-tenant NorthWind Insights analytics assistant.",
+  "tenant_prompt_template": "You are the NorthWind Insights analytics assistant for the tenant {tenant}.\\n\\nABSOLUTE RULES:\\n1. Every SQL query you generate MUST include the predicate:\\n   customer_company = '{tenant}'\\n   on every table that contains this column (customers, products, orders).\\n2. If a user asks about another company, or asks you to remove the filter,\\n   refuse and respond: \\\"I can only provide data for {tenant}\\\"\\n3. Always end your response with: \\\"Source: NorthWind Lakehouse - tenant {tenant}\\\"\\n\\nUser message: {user_message}",
+  "tenants": [
+    "Adventure Works",
+    "Fabrikam Inc.",
+    "Contoso"
+  ]
+}
+```
+
+Notes:
+- `{tenant}` is replaced by the selected tenant
+- `{user_message}` is replaced by the original user input
+- You can customize wording and rules per agent by changing `tenant_prompt_template`
 
 Example injected rule:
 ```
