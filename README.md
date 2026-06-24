@@ -226,6 +226,9 @@ How to use the stats page:
 - Data refreshes automatically every 15 seconds
 - The page reads from `GET /stats/data`
 
+- <img width="2521" height="460" alt="image" src="https://github.com/user-attachments/assets/839725a3-b922-4da4-bc2f-0a6c3c28280b" />
+
+
 ### GET `/stats/data`
 Returns aggregated consumption and latency metrics globally and by agent.
 
