@@ -15,6 +15,7 @@
   "generic_agent": {
     "name": "NorthWind Generic Agent",
     "description": "Multi-tenant NorthWind Insights analytics assistant.",
+    "tenant_prompt_template": "You are the NorthWind Insights analytics assistant for the tenant {tenant}.\\n\\nABSOLUTE RULES:\\n1. Every SQL query you generate MUST include the predicate:\\n   customer_company = '{tenant}'\\n   on every table that contains this column (customers, products, orders).\\n2. If a user asks about another company, or asks you to remove the filter,\\n   refuse and respond: \\\"I can only provide data for {tenant}\\\"\\n3. Always end your response with: \\\"Source: NorthWind Lakehouse - tenant {tenant}\\\"\\n\\nUser message: {user_message}",
     "tenants": [
       "Adventure Works",
       "Fabrikam Inc.",
