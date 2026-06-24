@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 
 import requests
 from flask import Flask, render_template, request, jsonify
+from flask_cors import CORS
 from azure.identity import ClientSecretCredential
 from dotenv import load_dotenv
 from pymongo import MongoClient, DESCENDING
@@ -106,6 +107,153 @@ def _save_history(agent_key: str, messages: list) -> None:
     except PyMongoError as exc:
         print(f"  [WARN] MongoDB save failed: {exc}")
 
+
+def _record_consumption(
+    agent_key: str,
+    usage_info: dict,
+    timing_info: dict,
+    tenant: str | None = None,
+) -> None:
+    """Persist per-call consumption details for later analytics."""
+    try:
+        now = datetime.now(timezone.utc)
+        _get_db()["query_metrics"].insert_one(
+            {
+                "agent_key": agent_key,
+                "tenant": tenant,
+                "prompt_tokens": int(usage_info.get("prompt_tokens", 0)),
+                "completion_tokens": int(usage_info.get("completion_tokens", 0)),
+                "total_tokens": int(usage_info.get("total_tokens", 0)),
+                "cu_minutes": float(usage_info.get("cu_minutes", 0.0)),
+                "agent_call_seconds": float(timing_info.get("agent_call_seconds", 0.0)),
+                "query_creation_seconds": float(timing_info.get("query_creation_seconds", 0.0)),
+                "query_execution_seconds": float(timing_info.get("query_execution_seconds", 0.0)),
+                "total_request_seconds": float(timing_info.get("total_request_seconds", 0.0)),
+                "started_at": timing_info.get("started_at"),
+                "finished_at": timing_info.get("finished_at"),
+                "created_at": now,
+            }
+        )
+    except (PyMongoError, TypeError, ValueError) as exc:
+        print(f"  [WARN] MongoDB metrics save failed: {exc}")
+
+
+def _get_consumption_stats() -> dict:
+    """Aggregate min/max/avg consumption per agent and globally."""
+    try:
+        collection = _get_db()["query_metrics"]
+
+        pipeline = [
+            {
+                "$group": {
+                    "_id": "$agent_key",
+                    "calls": {"$sum": 1},
+                    "min_cu_minutes": {"$min": "$cu_minutes"},
+                    "max_cu_minutes": {"$max": "$cu_minutes"},
+                    "avg_cu_minutes": {"$avg": "$cu_minutes"},
+                    "min_total_tokens": {"$min": "$total_tokens"},
+                    "max_total_tokens": {"$max": "$total_tokens"},
+                    "avg_total_tokens": {"$avg": "$total_tokens"},
+                    "min_total_request_seconds": {"$min": "$total_request_seconds"},
+                    "max_total_request_seconds": {"$max": "$total_request_seconds"},
+                    "avg_total_request_seconds": {"$avg": "$total_request_seconds"},
+                    "total_cu_minutes": {"$sum": "$cu_minutes"},
+                    "total_tokens": {"$sum": "$total_tokens"},
+                }
+            },
+            {"$sort": {"_id": 1}},
+        ]
+        by_agent = list(collection.aggregate(pipeline))
+
+        overall = {
+            "calls": 0,
+            "min_cu_minutes": 0.0,
+            "max_cu_minutes": 0.0,
+            "avg_cu_minutes": 0.0,
+            "total_cu_minutes": 0.0,
+            "min_total_tokens": 0,
+            "max_total_tokens": 0,
+            "avg_total_tokens": 0.0,
+            "total_tokens": 0,
+            "min_total_request_seconds": 0.0,
+            "max_total_request_seconds": 0.0,
+            "avg_total_request_seconds": 0.0,
+        }
+
+        if by_agent:
+            all_calls = sum(int(row.get("calls", 0)) for row in by_agent)
+            total_cu = sum(float(row.get("total_cu_minutes", 0.0)) for row in by_agent)
+            total_tokens = sum(int(row.get("total_tokens", 0)) for row in by_agent)
+
+            overall = {
+                "calls": all_calls,
+                "min_cu_minutes": min(float(row.get("min_cu_minutes", 0.0)) for row in by_agent),
+                "max_cu_minutes": max(float(row.get("max_cu_minutes", 0.0)) for row in by_agent),
+                "avg_cu_minutes": (total_cu / all_calls) if all_calls else 0.0,
+                "total_cu_minutes": total_cu,
+                "min_total_tokens": min(int(row.get("min_total_tokens", 0)) for row in by_agent),
+                "max_total_tokens": max(int(row.get("max_total_tokens", 0)) for row in by_agent),
+                "avg_total_tokens": (total_tokens / all_calls) if all_calls else 0.0,
+                "total_tokens": total_tokens,
+                "min_total_request_seconds": min(float(row.get("min_total_request_seconds", 0.0)) for row in by_agent),
+                "max_total_request_seconds": max(float(row.get("max_total_request_seconds", 0.0)) for row in by_agent),
+                "avg_total_request_seconds": (
+                    sum(float(row.get("avg_total_request_seconds", 0.0)) * int(row.get("calls", 0)) for row in by_agent) / all_calls
+                ) if all_calls else 0.0,
+            }
+
+        normalized = [
+            {
+                "agent_key": row.get("_id"),
+                "calls": int(row.get("calls", 0)),
+                "min_cu_minutes": round(float(row.get("min_cu_minutes", 0.0)), 6),
+                "max_cu_minutes": round(float(row.get("max_cu_minutes", 0.0)), 6),
+                "avg_cu_minutes": round(float(row.get("avg_cu_minutes", 0.0)), 6),
+                "total_cu_minutes": round(float(row.get("total_cu_minutes", 0.0)), 6),
+                "min_total_tokens": int(row.get("min_total_tokens", 0)),
+                "max_total_tokens": int(row.get("max_total_tokens", 0)),
+                "avg_total_tokens": round(float(row.get("avg_total_tokens", 0.0)), 2),
+                "total_tokens": int(row.get("total_tokens", 0)),
+                "min_total_request_seconds": round(float(row.get("min_total_request_seconds", 0.0)), 4),
+                "max_total_request_seconds": round(float(row.get("max_total_request_seconds", 0.0)), 4),
+                "avg_total_request_seconds": round(float(row.get("avg_total_request_seconds", 0.0)), 4),
+            }
+            for row in by_agent
+        ]
+
+        overall["min_cu_minutes"] = round(float(overall["min_cu_minutes"]), 6)
+        overall["max_cu_minutes"] = round(float(overall["max_cu_minutes"]), 6)
+        overall["avg_cu_minutes"] = round(float(overall["avg_cu_minutes"]), 6)
+        overall["total_cu_minutes"] = round(float(overall["total_cu_minutes"]), 6)
+        overall["avg_total_tokens"] = round(float(overall["avg_total_tokens"]), 2)
+        overall["min_total_request_seconds"] = round(float(overall["min_total_request_seconds"]), 4)
+        overall["max_total_request_seconds"] = round(float(overall["max_total_request_seconds"]), 4)
+        overall["avg_total_request_seconds"] = round(float(overall["avg_total_request_seconds"]), 4)
+
+        return {
+            "overall": overall,
+            "by_agent": normalized,
+        }
+    except PyMongoError as exc:
+        print(f"  [WARN] MongoDB stats read failed: {exc}")
+        return {
+            "overall": {
+                "calls": 0,
+                "min_cu_minutes": 0.0,
+                "max_cu_minutes": 0.0,
+                "avg_cu_minutes": 0.0,
+                "total_cu_minutes": 0.0,
+                "min_total_tokens": 0,
+                "max_total_tokens": 0,
+                "avg_total_tokens": 0.0,
+                "total_tokens": 0,
+                "min_total_request_seconds": 0.0,
+                "max_total_request_seconds": 0.0,
+                "avg_total_request_seconds": 0.0,
+            },
+            "by_agent": [],
+        }
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Authentication
 # ─────────────────────────────────────────────────────────────────────────────
@@ -146,6 +294,60 @@ def _url(base_url: str, path: str) -> str:
     return f"{base_url}/{path.lstrip('/')}?api-version={API_VERSION}"
 
 
+def _apply_configured_prompt_template(user_message: str, agent_key: str, tenant: str | None) -> str:
+    """Apply optional per-agent prompt template from config."""
+    agent_cfg = AGENTS.get(agent_key, {})
+    template = agent_cfg.get("tenant_prompt_template")
+    if template and tenant:
+        return str(template).format(tenant=tenant, user_message=user_message)
+    return user_message
+
+
+def _extract_assistant_text(msg: dict) -> str:
+    """Extract readable text from assistant message content blocks."""
+    content = msg.get("content", [])
+    if isinstance(content, dict):
+        content = [content]
+    if not isinstance(content, list):
+        return ""
+
+    parts: list[str] = []
+    for block in content:
+        if not isinstance(block, dict):
+            continue
+
+        btype = block.get("type")
+
+        # Standard assistant text block
+        if btype == "text":
+            text_obj = block.get("text")
+            if isinstance(text_obj, dict):
+                value = text_obj.get("value") or text_obj.get("text")
+                if value:
+                    parts.append(str(value))
+            elif text_obj:
+                parts.append(str(text_obj))
+            continue
+
+        # Alternate output-text shape returned by some APIs
+        if btype == "output_text":
+            value = block.get("text") or block.get("value")
+            if value:
+                parts.append(str(value))
+            continue
+
+        # File/tool style blocks: expose useful filename/path hints to UI
+        if btype in {"file", "output_file", "file_path"}:
+            filename = block.get("filename") or block.get("path") or block.get("name")
+            if filename:
+                parts.append(f"Generated file: {filename}")
+            else:
+                parts.append("A file was generated by the agent.")
+            continue
+
+    return "\n".join(p for p in parts if p).strip()
+
+
 def _ask(user_message: str, agent_key: str = DEFAULT_AGENT, tenant: str | None = None, timeout_s: int = 300) -> tuple[str, dict, dict]:
     """
     Send a single question to a Fabric Data Agent using the Assistants API
@@ -159,19 +361,8 @@ def _ask(user_message: str, agent_key: str = DEFAULT_AGENT, tenant: str | None =
     
     If tenant is provided (for generic_agent), prepend context to the message.
     """
-    # For generic agent, prepend tenant context and absolute rules to the user message
-    if tenant and agent_key == "generic_agent":
-        user_message = f"""You are the NorthWind Insights analytics assistant for the tenant {tenant}.
-
-ABSOLUTE RULES:
-1. Every SQL query you generate MUST include the predicate:
-   customer_company = '{tenant}'
-   on every table that contains this column (customers, products, orders).
-2. If a user asks about another company, or asks you to remove the filter,
-   refuse and respond: "I can only provide data for {tenant}"
-3. Always end your response with: "Source: NorthWind Lakehouse — tenant {tenant}"
-
-User message: {user_message}"""
+    # Apply optional configured prompt template (for example generic_agent tenant rules).
+    user_message = _apply_configured_prompt_template(user_message, agent_key, tenant)
     
     base_url = AGENTS[agent_key]["base_url"]
 
@@ -293,12 +484,7 @@ User message: {user_message}"""
             reply = ""
             for msg in reversed(messages):
                 if msg.get("role") == "assistant":
-                    content = msg.get("content", [])
-                    parts = []
-                    for block in content:
-                        if block.get("type") == "text":
-                            parts.append(block["text"]["value"])
-                    reply = "\n".join(parts)
+                    reply = _extract_assistant_text(msg)
                     break
 
             # Calculate CU cost: (prompt_tokens * 100 + completion_tokens * 400) / 1000 / 60
@@ -309,7 +495,7 @@ User message: {user_message}"""
             timing_info["total_request_seconds"] = round(time.perf_counter() - request_started, 4)
             timing_info["finished_at"] = datetime.now(timezone.utc).isoformat()
 
-            return reply or "(No response from agent.)", usage_info, timing_info
+            return reply or "The agent completed the run but returned structured output without plain text (for example, generated files).", usage_info, timing_info
 
         finally:
             # 7. Clean up thread
@@ -334,11 +520,24 @@ User message: {user_message}"""
 
 app = Flask(__name__)
 app.secret_key = os.urandom(32)
+CORS(app, resources={r"/*": {"origins": "*"}})  # Enable CORS for all routes
 
 
 @app.route("/")
 def index():
     return render_template("index.html", agents=AGENTS, default_agent=DEFAULT_AGENT)
+
+
+@app.route("/stats", methods=["GET"])
+def stats_page():
+    """Render query consumption statistics dashboard."""
+    return render_template("stats.html")
+
+
+@app.route("/stats/data", methods=["GET"])
+def stats_data():
+    """Return query consumption statistics as JSON."""
+    return jsonify(_get_consumption_stats())
 
 
 @app.route("/agents", methods=["GET"])
@@ -350,6 +549,7 @@ def list_agents():
             "description": v["description"],
             "capabilities": v["capabilities"],
             "sample_questions": v["sample_questions"],
+            "tenants": v.get("tenants", []),
         }
         for k, v in AGENTS.items()
     })
@@ -375,12 +575,24 @@ def clear_history(agent_key: str):
     return jsonify({"ok": True})
 
 
+@app.route("/debug/token", methods=["GET"])
+def debug_token():
+    """Test endpoint: returns whether a token can be acquired and the first 20 chars."""
+    try:
+        token = get_token()
+        return jsonify({"ok": True, "token_prefix": token[:20] + "...", "agents": list(AGENTS.keys())})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
+
+
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json(silent=True) or {}
     user_message: str = (data.get("message") or "").strip()
     agent_key: str    = data.get("agent_key") or DEFAULT_AGENT
     tenant: str | None = data.get("tenant")  # for generic_agent tenant selection
+
+    print(f"[CHAT] agent_key={agent_key!r} tenant={tenant!r} message={user_message[:60]!r}")
 
     if agent_key not in AGENTS:
         return jsonify({"error": f"Unknown agent '{agent_key}'."}), 400
@@ -393,8 +605,15 @@ def chat():
 
     try:
         reply, usage_info, timing_info = _ask(user_message, agent_key=agent_key, tenant=tenant)
-        history.append({"role": "assistant", "content": reply})
+        history.append({
+            "role": "assistant",
+            "content": reply,
+            "usage": usage_info,
+            "timings": timing_info,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
         _save_history(agent_key, history)
+        _record_consumption(agent_key=agent_key, usage_info=usage_info, timing_info=timing_info, tenant=tenant)
         print(
             f"[USAGE] agent={agent_key} prompt_tokens={usage_info['prompt_tokens']} "
             f"completion_tokens={usage_info['completion_tokens']} total_tokens={usage_info['total_tokens']} "
