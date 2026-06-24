@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Consumption Statistics</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f3f4f6;
+      --surface: #ffffff;
+      --ink: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --brand: #0078d4;
+      --good: #15803d;
+      --warn: #9a3412;
+    }
+
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      min-height: 100dvh;
+    }
+
+    header {
+      background: var(--brand);
+      color: #fff;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.25rem;
+      box-shadow: 0 2px 6px rgba(0,0,0,.22);
+    }
+
+    .title {
+      display: flex;
+      align-items: center;
+      gap: .6rem;
+      font-size: 1rem;
+      font-weight: 600;
+      letter-spacing: .01em;
+    }
+
+    .back-link {
+      color: #fff;
+      text-decoration: none;
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 8px;
+      padding: .36rem .78rem;
+      font-size: .82rem;
+      transition: background .15s, border-color .15s;
+    }
+
+    .back-link:hover {
+      background: rgba(255,255,255,.14);
+      border-color: rgba(255,255,255,.6);
+    }
+
+    main {
+      max-width: 1180px;
+      margin: 1.05rem auto 2rem;
+      padding: 0 1rem;
+      display: grid;
+      gap: 1rem;
+    }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(180px, 1fr));
+      gap: .8rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: .85rem .95rem;
+      box-shadow: 0 1px 2px rgba(17,24,39,.04);
+    }
+
+    .card-label {
+      color: var(--muted);
+      font-size: .74rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      margin-bottom: .5rem;
+      font-weight: 700;
+    }
+
+    .card-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .card-value.good { color: var(--good); }
+    .card-value.warn { color: var(--warn); }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(17,24,39,.04);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: .8rem .95rem;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .8rem;
+      background: #f8fafc;
+    }
+
+    .panel-title {
+      font-size: .95rem;
+      font-weight: 600;
+    }
+
+    .updated {
+      color: var(--muted);
+      font-size: .8rem;
+    }
+
+    .table-wrap {
+      overflow-x: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 860px;
+    }
+
+    th, td {
+      padding: .55rem .65rem;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      font-size: .84rem;
+      white-space: nowrap;
+    }
+
+    th {
+      color: #374151;
+      background: #f9fafb;
+      font-weight: 700;
+      font-size: .78rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+
+    tbody tr:hover { background: #f8fafc; }
+
+    .empty {
+      padding: 1rem;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+
+    @media (max-width: 920px) {
+      .summary-grid { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+    }
+
+    @media (max-width: 520px) {
+      .summary-grid { grid-template-columns: 1fr; }
+      header { padding: 0 .8rem; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">Query Consumption Statistics</div>
+    <a class="back-link" href="/">Back To Chat</a>
+  </header>
+
+  <main>
+    <section class="summary-grid" id="summary-cards">
+      <article class="card">
+        <div class="card-label">Total Calls</div>
+        <div class="card-value" id="calls-value">0</div>
+      </article>
+      <article class="card">
+        <div class="card-label">Total CU (minutes)</div>
+        <div class="card-value good" id="total-cu-value">0</div>
+      </article>
+      <article class="card">
+        <div class="card-label">Average CU / Call</div>
+        <div class="card-value" id="avg-cu-value">0</div>
+      </article>
+      <article class="card">
+        <div class="card-label">Average Duration (s)</div>
+        <div class="card-value warn" id="avg-time-value">0</div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div class="panel-title">By Agent: Min / Max / Average</div>
+        <div class="updated" id="updated-at">Updated: --</div>
+      </div>
+      <div class="table-wrap" id="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Agent</th>
+              <th>Calls</th>
+              <th>CU Min</th>
+              <th>CU Avg</th>
+              <th>CU Max</th>
+              <th>Tokens Min</th>
+              <th>Tokens Avg</th>
+              <th>Tokens Max</th>
+              <th>Time Min (s)</th>
+              <th>Time Avg (s)</th>
+              <th>Time Max (s)</th>
+            </tr>
+          </thead>
+          <tbody id="agent-rows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="empty-state" style="display:none;">No query metrics found yet. Send some chat messages first.</div>
+    </section>
+  </main>
+
+  <script>
+    function fmt(value, digits = 4) {
+      const n = Number(value || 0);
+      return Number.isFinite(n) ? n.toFixed(digits) : "0";
+    }
+
+    function fmtInt(value) {
+      return new Intl.NumberFormat().format(Number(value || 0));
+    }
+
+    function setSummary(overall) {
+      document.getElementById("calls-value").textContent = fmtInt(overall.calls);
+      document.getElementById("total-cu-value").textContent = fmt(overall.total_cu_minutes, 4);
+      document.getElementById("avg-cu-value").textContent = fmt(overall.avg_cu_minutes, 6);
+      document.getElementById("avg-time-value").textContent = fmt(overall.avg_total_request_seconds, 4);
+    }
+
+    function setTable(rows) {
+      const tbody = document.getElementById("agent-rows");
+      const empty = document.getElementById("empty-state");
+      const tableWrap = document.getElementById("table-wrap");
+
+      tbody.innerHTML = "";
+      if (!rows || rows.length === 0) {
+        empty.style.display = "block";
+        tableWrap.style.display = "none";
+        return;
+      }
+
+      empty.style.display = "none";
+      tableWrap.style.display = "block";
+
+      rows.forEach((row) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${row.agent_key || "unknown"}</td>
+          <td>${fmtInt(row.calls)}</td>
+          <td>${fmt(row.min_cu_minutes, 6)}</td>
+          <td>${fmt(row.avg_cu_minutes, 6)}</td>
+          <td>${fmt(row.max_cu_minutes, 6)}</td>
+          <td>${fmtInt(row.min_total_tokens)}</td>
+          <td>${fmt(row.avg_total_tokens, 2)}</td>
+          <td>${fmtInt(row.max_total_tokens)}</td>
+          <td>${fmt(row.min_total_request_seconds, 4)}</td>
+          <td>${fmt(row.avg_total_request_seconds, 4)}</td>
+          <td>${fmt(row.max_total_request_seconds, 4)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function loadStats() {
+      try {
+        const res = await fetch("/stats/data", { cache: "no-store" });
+        const data = await res.json();
+        setSummary(data.overall || {});
+        setTable(data.by_agent || []);
+        document.getElementById("updated-at").textContent = `Updated: ${new Date().toLocaleString()}`;
+      } catch (err) {
+        document.getElementById("empty-state").style.display = "block";
+        document.getElementById("empty-state").textContent = `Failed to load stats: ${err.message}`;
+        document.getElementById("table-wrap").style.display = "none";
+      }
+    }
+
+    loadStats();
+    setInterval(loadStats, 15000);
+  </script>
+</body>
+</html>

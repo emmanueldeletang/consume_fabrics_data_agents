@@ -30,6 +30,17 @@
       flex-shrink: 0;
     }
     header h1 { font-size: 1.1rem; font-weight: 600; letter-spacing: .01em; }
+    .header-spacer { flex: 1; }
+    .stats-link {
+      color: #fff;
+      text-decoration: none;
+      border: 1px solid rgba(255,255,255,.35);
+      border-radius: 8px;
+      padding: .34rem .72rem;
+      font-size: .82rem;
+      transition: background .15s, border-color .15s;
+    }
+    .stats-link:hover { background: rgba(255,255,255,.14); border-color: rgba(255,255,255,.6); }
 
     /* ── Two-column layout ────────────────────────────────────────── */
     .layout {
@@ -256,6 +267,8 @@
     <path d="M12 3V21M4 8.5L20 15.5M20 8.5L4 15.5" stroke="white" stroke-width="1" stroke-opacity="0.5"/>
   </svg>
   <h1>Fabric Data Agent</h1>
+  <div class="header-spacer"></div>
+  <a class="stats-link" href="/stats">Consumption Stats</a>
 </header>
 
 <div class="layout">
@@ -487,7 +500,15 @@
       const data = await res.json();
       const hist = data.messages || [];
       messages = hist;
-      hist.forEach(m => appendMessage(m.role === "user" ? "user" : "agent", m.content));
+      hist.forEach(m => {
+        appendMessage(
+          m.role === "user" ? "user" : "agent",
+          m.content,
+          false,
+          m.usage || null,
+          m.timings || null
+        );
+      });
     } catch (_) { /* silently ignore if DB unreachable */ }
   }
 
